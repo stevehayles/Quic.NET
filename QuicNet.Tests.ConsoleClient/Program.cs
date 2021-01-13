@@ -1,55 +1,54 @@
-using QuicNet.Connections;
-using QuicNet.Context;
-using QuicNet.Streams;
 using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Text;
-using System.Threading.Tasks;
+using QuicNet.Connections;
+using QuicNet.Streams;
 
 namespace QuicNet.Tests.ConsoleClient
 {
+
     class Program
     {
         static void Main(string[] args)
         {
-            Console.WriteLine("Starting client.");
             QuicClient client = new QuicClient();
-            Console.WriteLine("Connecting to server.");
-            QuicConnection connection = client.Connect("127.0.0.1", 11000);   // Connect to peer (Server)
-            Console.WriteLine("Connected");
-            
-            QuicStream stream = connection.CreateStream(QuickNet.Utilities.StreamType.ClientBidirectional); // Create a data stream
-            Console.WriteLine("Create stream with id: " + stream.StreamId.IntegerValue.ToString());
 
-            Console.WriteLine("Send 'Hello From Client!'");
-            stream.Send(Encoding.UTF8.GetBytes("Hello from Client!"));        // Send Data
+            // Connect to peer (Server)
+            QuicConnection connection = client.Connect("127.0.0.1", 11000);
+            // Create a data stream
+            QuicStream stream = connection.CreateStream(QuickNet.Utilities.StreamType.ClientBidirectional);
+            // Send Data
+            stream.Send(Encoding.UTF8.GetBytes("Hello from Client!"));   
+            // Wait reponse back from the server
+            byte[] data = stream.Receive();
 
-            stream = connection.CreateStream(QuickNet.Utilities.StreamType.ClientBidirectional); // Create a data stream
-            stream.Send(Encoding.UTF8.GetBytes("Hello from Client2!"));
-
-            Console.WriteLine("Waiting for message from the server");
-            try
-            {
-                byte[] data = stream.Receive();                                   // Receive from server
-                Console.WriteLine("Received: " + Encoding.UTF8.GetString(data));
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine(e.Message);
-            }
-
-            try
-            {
-                byte[] data = stream.Receive();                                   // Receive from server
-                Console.WriteLine("Received: " + Encoding.UTF8.GetString(data));
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine(e.Message);
-            }
+            Console.WriteLine(Encoding.UTF8.GetString(data));
 
             Console.ReadKey();
+        }
+
+        static string GenerateData(int kb)
+        {
+            string res = "";
+            for (int i = 0; i < kb; i++)
+            {
+                for (int j = 0; j < 100; j++)
+                {
+                    res += "!!!!!!!!!!";
+                }
+            }
+
+            return res;
+        }
+
+        static string GenerateBytes(int bytes)
+        {
+            string result = string.Empty;
+            for (int i = 0; i < bytes; i++)
+            {
+                result += "!";
+            }
+
+            return result;
         }
     }
 }

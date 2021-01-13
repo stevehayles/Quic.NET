@@ -8,25 +8,15 @@ namespace QuickNet.Utilities
 {
     public class ByteArray
     {
-        private int _length;
-        private int _offset;
-        private bool _readable;
-        private byte[] _array;
+        private readonly byte[] _array;
+        private readonly int _length;
 
+        private int _offset;
         public ByteArray(byte[] array)
         {
-            _readable = true;
             _array = array;
-
-            if (array == null || array.Length <= 0)
-            {
-                _readable = false;
-            }
-            else
-            {
-                _length = array.Length;
-                _offset = 0;
-            }
+            _length = array.Length;
+            _offset = 0;
         }
 
         public byte ReadByte()
@@ -49,6 +39,11 @@ namespace QuickNet.Utilities
             _offset += count;
 
             return bytes;
+        }
+
+        public byte[] ReadBytes(VariableInteger count)
+        {
+            return ReadBytes(count.Value);
         }
 
         public UInt16 ReadUInt16()
@@ -78,6 +73,14 @@ namespace QuickNet.Utilities
             _offset += size;
 
             return bytes;
+        }
+
+        public GranularInteger ReadGranularInteger(int size)
+        {
+            byte[] data = ReadBytes(size);
+            GranularInteger result = data;
+
+            return result;
         }
 
         public StreamId ReadStreamId()

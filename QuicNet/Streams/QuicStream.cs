@@ -1,6 +1,8 @@
 ﻿using QuickNet.Utilities;
 using QuicNet.Connections;
+using QuicNet.Constants;
 using QuicNet.Context;
+using QuicNet.Events;
 using QuicNet.Exceptions;
 using QuicNet.Infrastructure.Frames;
 using QuicNet.Infrastructure.Packets;
@@ -21,10 +23,13 @@ namespace QuicNet.Streams
         private QuicConnection _connection;
         private UInt64 _maximumStreamData;
         private UInt64 _currentTransferRate;
+        private UInt64 _sendOffset;
 
         public StreamState State { get; set; }
         public StreamType Type { get; set; }
         public StreamId StreamId { get; }
+
+        public StreamDataReceivedEvent OnStreamDataReceived { get; set; }
 
         public byte[] Data
         {
@@ -41,6 +46,7 @@ namespace QuicNet.Streams
 
             _maximumStreamData = QuicSettings.MaxStreamData;
             _currentTransferRate = 0;
+            _sendOffset = 0;
 
             _connection = connection;
         }
@@ -52,11 +58,35 @@ namespace QuicNet.Streams
 
             _connection.IncrementRate(data.Length);
 
-            ShortHeaderPacket packet = _connection.PacketCreator.CreateDataPacket(this.StreamId.IntegerValue, data);
-            if (_connection.MaximumReached())
-                packet.AttachFrame(new StreamDataBlockedFrame(StreamId.IntegerValue, (UInt64)data.Length));
+            int numberOfPackets = (data.Length / QuicSettings.PMTU) + 1;
+            int leftoverCarry = data.Length % QuicSettings.PMTU;
 
-            return _connection.SendData(packet);
+            for (int i = 0; i < numberOfPackets; i++)
+            {
+                bool eos = false;
+                int dataSize = QuicSettings.PMTU;
+                if (i == numberOfPackets - 1)
+                {
+                    eos = true;
+                    dataSize = leftoverCarry;
+                }
+
+                byte[] buffer = new byte[dataSize];
+                Buffer.BlockCopy(data, (Int32)_sendOffset, buffer, 0, dataSize);
+
+                ShortHeaderPacket packet = _connection.PacketCreator.CreateDataPacket(this.StreamId.IntegerValue, buffer, _sendOffset, eos);
+                if (i == 0 && data.Length >= QuicSettings.MaxStreamData)
+                    packet.AttachFrame(new MaxStreamDataFrame(this.StreamId.IntegerValue, (UInt64)(data.Length + 1)));
+
+                if (_connection.MaximumReached())
+                    packet.AttachFrame(new StreamDataBlockedFrame(StreamId.IntegerValue, (UInt64)data.Length));
+
+                _sendOffset += (UInt64)buffer.Length;
+
+                _connection.SendData(packet);
+            }
+            
+            return true;
         }
 
         /// <summary>
@@ -100,6 +130,14 @@ namespace QuicNet.Streams
             return false;
         }
 
+        public bool IsOpen()
+        {
+            if (State == StreamState.DataRecvd || State == StreamState.ResetRecvd)
+                return false;
+
+            return true;
+        }
+
         public void ProcessData(StreamFrame frame)
         {
             // Do not accept data if the stream is reset.
@@ -127,7 +165,7 @@ namespace QuicNet.Streams
             // Terminate connection if maximum stream data is reached
             if (_currentTransferRate >= _maximumStreamData)
             {
-                ShortHeaderPacket errorPacket = _connection.PacketCreator.CreateConnectionClosePacket(Infrastructure.ErrorCode.FLOW_CONTROL_ERROR, "Maximum stream data transfer reached.");
+                ShortHeaderPacket errorPacket = _connection.PacketCreator.CreateConnectionClosePacket(Infrastructure.ErrorCode.FLOW_CONTROL_ERROR, frame.ActualType, ErrorConstants.MaxDataTransfer);
                 _connection.SendData(errorPacket);
                 _connection.TerminateConnection();
 
@@ -136,9 +174,9 @@ namespace QuicNet.Streams
 
             if (State == StreamState.SizeKnown && IsStreamFull())
             {
-                _connection.DataReceived(this);
-
                 State = StreamState.DataRecvd;
+
+                OnStreamDataReceived?.Invoke(this, Data);
             }
         }
 
@@ -156,7 +194,7 @@ namespace QuicNet.Streams
                 if (kvp.Key > 0 && kvp.Key != length)
                     return false;
 
-                length = (UInt64)kvp.Value.Length;
+                length += (UInt64)kvp.Value.Length;
             }
 
             return true;
